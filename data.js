@@ -1,4 +1,4 @@
-/* BGP BI — gerado por build-data.cjs em 2026-06-11T15:03:01.036Z */
+/* BGP BI — gerado por build-data.cjs em 2026-06-11T16:56:22.245Z */
 /* Empresa: Economy Assessoria — Marketing | Ano ref: 2026 */
 const MONTHS = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const MONTHS_FULL = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];

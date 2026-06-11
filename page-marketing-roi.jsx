@@ -25,6 +25,29 @@ const CANAL_COLORS = {
   "Indicação": "#10b981", "Renovação": "#06b6d4", "Outros": "#6b7686",
 };
 
+// Mapeamento tag de pagamento -> região
+const TAG_REGIAO_MAP = [
+  { regiao: 'Brasília', re: /bras[ií]lia|valpara[ií]so/i },
+  { regiao: 'Ceará', re: /cear[aá]/i },
+  { regiao: 'Maranhão', re: /maranh[aã]o/i },
+  { regiao: 'Goiás', re: /goi[aá]s/i },
+  { regiao: 'Paraná', re: /paran[aá]|curitiba/i },
+  { regiao: 'Bahia', re: /bahia/i },
+  { regiao: 'Pará', re: /par[aá]\b/i },
+  { regiao: 'Nacional', re: /nacional|operacional|matriz|ag[eê]ncia|mechan|panflet|inaugura/i },
+];
+function classifyRegiao(tag) {
+  if (!tag) return null;
+  for (const m of TAG_REGIAO_MAP) { if (m.re.test(tag)) return m.regiao; }
+  return null;
+}
+
+const REGIAO_COLORS = {
+  'Brasília': '#f59e0b', 'Ceará': '#22d3ee', 'Maranhão': '#a78bfa',
+  'Goiás': '#10b981', 'Paraná': '#ef4444', 'Bahia': '#6366f1',
+  'Pará': '#f97316', 'Nacional': '#6b7280', 'Sem Região': '#374151',
+};
+
 // Funil de qualificação — formato trapézio real (afunila de cima pra baixo)
 const FUNIL_COLORS = [
   "#22d3ee", "#06b6d4", "#2dd4bf", "#34d399", "#fbbf24", "#f97316", "#10b981", "#10b981",
@@ -349,6 +372,7 @@ const PageMarketingROI = ({ statusFilter, filters, setFilters, year }) => {
     const sf = statusFilter || "realizado";
     const byMonth = new Array(12).fill(0);
     const byCanal = new Map();
+    const byRegiao = new Map();
 
     for (let i = 0; i < allTx.length; i++) {
       const r = allTx[i];
@@ -370,11 +394,15 @@ const PageMarketingROI = ({ statusFilter, filters, setFilters, year }) => {
 
       byMonth[mIdx] += val;
       byCanal.set(canal, (byCanal.get(canal) || 0) + val);
+      const tag = r[10] || '';
+      const regiao = classifyRegiao(tag);
+      if (regiao) byRegiao.set(regiao, (byRegiao.get(regiao) || 0) + val);
     }
 
     return {
       byMonth,
       byCanal: [...byCanal.entries()].map(([canal, val]) => ({ canal, val })).sort((a, b) => b.val - a.val),
+      byRegiao: [...byRegiao.entries()].map(([regiao, val]) => ({ regiao, val })).sort((a, b) => b.val - a.val),
       total: byMonth.reduce((a, b) => a + b, 0),
     };
   }, [statusFilter, filters, refYear, dateFrom, dateTo]);
@@ -424,6 +452,29 @@ const PageMarketingROI = ({ statusFilter, filters, setFilters, year }) => {
         conv: rd.leads > 0 ? (rd.wins / rd.leads) * 100 : 0,
       };
     }).sort((a, b) => b.investido - a.investido || b.leads - a.leads);
+  }, [mktData, ROI]);
+
+  // ---------- Região table (cross Tags x RD) ----------
+  const regiaoTable = useMemo(() => {
+    const rdMap = new Map();
+    if (ROI.porRegiao) {
+      for (const r of ROI.porRegiao) rdMap.set(r.regiao, r);
+    }
+    const allRegioes = new Set([...mktData.byRegiao.map(r => r.regiao), ...(ROI.porRegiao || []).map(r => r.regiao)]);
+    return [...allRegioes].filter(r => r !== 'Sem Região').map(regiao => {
+      const rd = rdMap.get(regiao) || { leads: 0, wins: 0, amountWon: 0 };
+      const eg = mktData.byRegiao.find(r => r.regiao === regiao);
+      const investido = eg ? eg.val : 0;
+      return {
+        regiao,
+        investido,
+        leads: rd.leads,
+        wins: rd.wins,
+        cpl: rd.leads > 0 ? investido / rd.leads : null,
+        cpv: rd.wins > 0 ? investido / rd.wins : null,
+        conv: rd.leads > 0 ? (rd.wins / rd.leads) * 100 : 0,
+      };
+    }).sort((a, b) => b.investido - a.investido);
   }, [mktData, ROI]);
 
   // ---------- Monthly summary table ----------
@@ -521,6 +572,61 @@ const PageMarketingROI = ({ statusFilter, filters, setFilters, year }) => {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Região table */}
+      <div className="card">
+        <h2 className="card-title">CPL por Região</h2>
+        <p style={{ color: "var(--mute)", fontSize: 12, marginBottom: 12 }}>Investimento por tag de pagamento × leads por campanha regional no RD</p>
+        <div className="t-scroll">
+          <table className="t" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>Região</th>
+                <th>Investido</th>
+                <th>Leads</th>
+                <th>Vendas</th>
+                <th>CPL</th>
+                <th>CPV</th>
+                <th>Conv%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regiaoTable.map(row => (
+                <tr key={row.regiao}>
+                  <td style={{ textAlign: "left" }}>
+                    <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: REGIAO_COLORS[row.regiao] || "#6b7686", marginRight: 8, verticalAlign: "middle" }} />
+                    {row.regiao}
+                  </td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{row.investido > 0 ? fmtRK(row.investido) : "—"}</td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{row.leads.toLocaleString("pt-BR")}</td>
+                  <td style={{ fontFamily: "var(--font-mono)", color: "var(--green)" }}>{row.wins.toLocaleString("pt-BR")}</td>
+                  <td style={{ fontFamily: "var(--font-mono)", color: "var(--amber)" }}>{row.cpl != null ? fmtR(row.cpl) : "—"}</td>
+                  <td style={{ fontFamily: "var(--font-mono)", color: "var(--red)" }}>{row.cpv != null ? fmtR(row.cpv) : "—"}</td>
+                  <td style={{ fontFamily: "var(--font-mono)", color: row.conv > 10 ? "var(--green)" : row.conv > 2 ? "var(--amber)" : "var(--mute)" }}>
+                    {row.conv.toFixed(1).replace(".", ",")}%
+                  </td>
+                </tr>
+              ))}
+              {regiaoTable.length > 0 && (() => {
+                const totInv = regiaoTable.reduce((s, r) => s + r.investido, 0);
+                const totLeads = regiaoTable.reduce((s, r) => s + r.leads, 0);
+                const totWins = regiaoTable.reduce((s, r) => s + r.wins, 0);
+                return (
+                  <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 700 }}>
+                    <td style={{ textAlign: "left" }}>Total</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>{fmtRK(totInv)}</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>{totLeads.toLocaleString("pt-BR")}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", color: "var(--green)" }}>{totWins.toLocaleString("pt-BR")}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", color: "var(--amber)" }}>{totLeads > 0 ? fmtR(totInv / totLeads) : "—"}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", color: "var(--red)" }}>{totWins > 0 ? fmtR(totInv / totWins) : "—"}</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>{totLeads > 0 ? (totWins / totLeads * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td>
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>

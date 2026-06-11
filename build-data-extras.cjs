@@ -388,6 +388,20 @@ if (RD_FILE && fs.existsSync(RD_FILE)) {
     return 'Outros';
   }
 
+  // Mapeamento campanha -> região (por UF no nome da campanha)
+  const CAMP_UF_REGIAO = {
+    'CE': 'Ceará', 'DF': 'Brasília', 'PR': 'Paraná',
+    'MA': 'Maranhão', 'GO': 'Goiás', 'BA': 'Bahia',
+    'PA': 'Pará', 'SP': 'São Paulo', 'RJ': 'Rio de Janeiro',
+    'MG': 'Minas Gerais', 'NACIONAL': 'Nacional',
+  };
+  function rdRegiao(campaign) {
+    if (!campaign) return 'Sem Região';
+    const m = campaign.match(/[\s\-]+(?:(CE|DF|PR|MA|GO|BA|PA|SP|RJ|MG|NACIONAL))\b/i);
+    if (m) return CAMP_UF_REGIAO[m[1].toUpperCase()] || 'Sem Região';
+    return 'Sem Região';
+  }
+
   // Parse ISO timestamp -> "YYYY-MM-DD"
   function parseRdDate(v) {
     if (!v) return null;
@@ -437,6 +451,7 @@ if (RD_FILE && fs.existsSync(RD_FILE)) {
   const canalMap = new Map();   // canal -> { leads, wins, amountWon }
   const sourceMap = new Map();  // deal_source -> { leads, wins }
   const campMap = new Map();    // campaign -> { leads, wins }
+  const regiaoMap = new Map(); // regiao -> { leads, wins, amountWon }
   const monthCanalMap = new Map(); // "YYYY-MM|canal" -> { leads, wins, amountWon }
 
   let totalLeads = 0, totalWins = 0, totalLost = 0, totalOpen = 0, totalAmountWon = 0;
@@ -512,6 +527,13 @@ if (RD_FILE && fs.existsSync(RD_FILE)) {
       cp.leads++;
       if (win) cp.wins++;
     }
+
+    // Por região
+    const regiao = rdRegiao(campaign);
+    if (!regiaoMap.has(regiao)) regiaoMap.set(regiao, { regiao, leads: 0, wins: 0, amountWon: 0 });
+    const rg2 = regiaoMap.get(regiao);
+    rg2.leads++;
+    if (win) { rg2.wins++; rg2.amountWon += amount; }
   }
 
   // Build funil: etapas acumulativas (quantos chegaram em cada etapa)
@@ -561,6 +583,7 @@ if (RD_FILE && fs.existsSync(RD_FILE)) {
     porMesWins,
     porMesAmountWon,
     porCanal: [...canalMap.values()].sort((a, b) => b.leads - a.leads),
+    porRegiao: [...regiaoMap.values()].sort((a, b) => b.leads - a.leads),
     monthCanal: [...monthCanalMap.values()].sort((a, b) => a.mes.localeCompare(b.mes) || b.leads - a.leads),
     porSource: [...sourceMap.values()].sort((a, b) => b.leads - a.leads).slice(0, 20),
     porCampaign: [...campMap.values()].sort((a, b) => b.leads - a.leads).slice(0, 25),
